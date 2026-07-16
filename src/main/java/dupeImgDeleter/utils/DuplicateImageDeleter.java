@@ -14,6 +14,7 @@ public class DuplicateImageDeleter extends JFrame {
 
     // Persistent Radio Buttons for Config States
     private JRadioButton duplicateModeRadio;
+    private JRadioButton similarModeRadio;
     private JRadioButton textModeRadio;
     private JRadioButton dryRunRadio;
     private JRadioButton deleteRadio;
@@ -58,23 +59,27 @@ public class DuplicateImageDeleter extends JFrame {
         sidePanel.setLayout(new BoxLayout(sidePanel, BoxLayout.Y_AXIS));
         sidePanel.setBorder(BorderFactory.createEmptyBorder(10, 5, 10, 10));
 
-        // 1. Feature Selector Group
+        // Feature Selector Group
         JPanel featurePanel = new JPanel();
         featurePanel.setLayout(new BoxLayout(featurePanel, BoxLayout.Y_AXIS));
         featurePanel.setBorder(BorderFactory.createTitledBorder("Scan Feature Mode"));
 
         duplicateModeRadio = new JRadioButton("Find Duplicate Images", true);
+        similarModeRadio = new JRadioButton("Find Similar Images (Perceptual)", false);
         textModeRadio = new JRadioButton("Find White Text on Black BG", false);
 
         ButtonGroup featureGroup = new ButtonGroup();
         featureGroup.add(duplicateModeRadio);
+        featureGroup.add(similarModeRadio);
         featureGroup.add(textModeRadio);
 
         featurePanel.add(duplicateModeRadio);
         featurePanel.add(Box.createRigidArea(new Dimension(0, 5)));
+        featurePanel.add(similarModeRadio);
+        featurePanel.add(Box.createRigidArea(new Dimension(0, 5)));
         featurePanel.add(textModeRadio);
 
-        // 2. Action Mode Selector Group
+        // Action Mode Selector Group
         JPanel actionPanel = new JPanel();
         actionPanel.setLayout(new BoxLayout(actionPanel, BoxLayout.Y_AXIS));
         actionPanel.setBorder(BorderFactory.createTitledBorder("Operation Mode"));
@@ -108,9 +113,14 @@ public class DuplicateImageDeleter extends JFrame {
 
     private void selectAndRunScan() {
         // Evaluate the persistent radio options directly
-        ScanStrategy selectedStrategy = duplicateModeRadio.isSelected() 
-                ? new DuplicateScanStrategy() 
-                : new TextImageScanStrategy();
+    	ScanStrategy selectedStrategy;
+        if (duplicateModeRadio.isSelected()) {
+            selectedStrategy = new DuplicateScanStrategy();
+        } else if (similarModeRadio.isSelected()) {
+            selectedStrategy = new SimilarImageScanStrategy();
+        } else {
+            selectedStrategy = new TextImageScanStrategy();
+        }
 
         boolean isDryRun = dryRunRadio.isSelected();
 
@@ -144,6 +154,7 @@ public class DuplicateImageDeleter extends JFrame {
     private void setControlsEnabled(boolean enabled) {
         startButton.setEnabled(enabled);
         duplicateModeRadio.setEnabled(enabled);
+        similarModeRadio.setEnabled(enabled);
         textModeRadio.setEnabled(enabled);
         dryRunRadio.setEnabled(enabled);
         deleteRadio.setEnabled(enabled);
