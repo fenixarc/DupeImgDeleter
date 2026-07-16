@@ -114,6 +114,9 @@ public class DuplicateImageDeleter extends JFrame {
 
         @Override
         protected Void doInBackground() throws Exception {
+        	// Start the execution timer
+            long startTime = System.currentTimeMillis();
+            
             publish("Target folder: " + directory.getAbsolutePath());
             
             if (isDryRun) {
@@ -187,14 +190,32 @@ public class DuplicateImageDeleter extends JFrame {
                     }
                 }
             }
+            
+            // Calculate runtime metrics
+            long endTime = System.currentTimeMillis();
+            long durationMillis = endTime - startTime;
+            String timeString = formatDuration(durationMillis);
 
             // Summary Info
             publish("\n--- Scan Complete ---");
             String action = isDryRun ? "moved to staging" : "permanently deleted";
             publish("Total duplicate files " + action + ": " + processedCount);
             publish("Total space managed: " + (bytesSaved / (1024 * 1024)) + " MB");
+            publish("Total run time: " + timeString);
 
             return null;
+        }
+        
+        private String formatDuration(long millis) {
+            long totalSeconds = millis / 1000;
+            if (totalSeconds < 60) {
+                double preciseSeconds = millis / 1000.0;
+                return String.format(Locale.US, "%.2f seconds", preciseSeconds);
+            } else {
+                long minutes = totalSeconds / 60;
+                long seconds = totalSeconds % 60;
+                return String.format(Locale.US, "%d min, %d sec", minutes, seconds);
+            }
         }
 
         @Override
