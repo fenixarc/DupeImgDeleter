@@ -10,21 +10,38 @@ public class DuplicateImageDeleter extends JFrame {
 
     private final JTextArea logArea;
     private final JProgressBar progressBar;
-    private final JButton startButton;
+    private JButton startButton;
+
+    // Persistent Radio Buttons for Config States
+    private JRadioButton duplicateModeRadio;
+    private JRadioButton textModeRadio;
+    private JRadioButton dryRunRadio;
+    private JRadioButton deleteRadio;
+    
+    // Tracks the folder context persistently across subsequent button clicks
+    private File lastSelectedDir;
 
     public DuplicateImageDeleter() {
         setTitle("Image Utility Toolkit");
-        setSize(650, 450);
+        setSize(850, 450); // Widened slightly to accommodate the side control panel smoothly
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout(10, 10));
 
+        // Center: Text Log Area
         logArea = new JTextArea();
         logArea.setEditable(false);
         logArea.setFont(new Font("Consolas", Font.PLAIN, 12));
         JScrollPane scrollPane = new JScrollPane(logArea);
         add(scrollPane, BorderLayout.CENTER);
+        
+        lastSelectedDir = new File(System.getProperty("user.home"));
 
+        // Right: Control Sidebar Panel
+        JPanel sidePanel = createSidebarPanel();
+        add(sidePanel, BorderLayout.EAST);
+
+        // Bottom Panel for Progress Bar
         JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
 
@@ -33,73 +50,103 @@ public class DuplicateImageDeleter extends JFrame {
         progressBar.setString("Ready");
         bottomPanel.add(progressBar, BorderLayout.CENTER);
 
-        startButton = new JButton("Select Folder & Scan");
-        startButton.addActionListener(e -> selectAndRunScan());
-        bottomPanel.add(startButton, BorderLayout.EAST);
-
         add(bottomPanel, BorderLayout.SOUTH);
     }
 
+    private JPanel createSidebarPanel() {
+        JPanel sidePanel = new JPanel();
+        sidePanel.setLayout(new BoxLayout(sidePanel, BoxLayout.Y_AXIS));
+        sidePanel.setBorder(BorderFactory.createEmptyBorder(10, 5, 10, 10));
+
+        // 1. Feature Selector Group
+        JPanel featurePanel = new JPanel();
+        featurePanel.setLayout(new BoxLayout(featurePanel, BoxLayout.Y_AXIS));
+        featurePanel.setBorder(BorderFactory.createTitledBorder("Scan Feature Mode"));
+
+        duplicateModeRadio = new JRadioButton("Find Duplicate Images", true);
+        textModeRadio = new JRadioButton("Find White Text on Black BG", false);
+
+        ButtonGroup featureGroup = new ButtonGroup();
+        featureGroup.add(duplicateModeRadio);
+        featureGroup.add(textModeRadio);
+
+        featurePanel.add(duplicateModeRadio);
+        featurePanel.add(Box.createRigidArea(new Dimension(0, 5)));
+        featurePanel.add(textModeRadio);
+
+        // 2. Action Mode Selector Group
+        JPanel actionPanel = new JPanel();
+        actionPanel.setLayout(new BoxLayout(actionPanel, BoxLayout.Y_AXIS));
+        actionPanel.setBorder(BorderFactory.createTitledBorder("Operation Mode"));
+
+        dryRunRadio = new JRadioButton("Stage Matches (Dry Run)", true);
+        deleteRadio = new JRadioButton("Permanently Delete", false);
+
+        ButtonGroup actionGroup = new ButtonGroup();
+        actionGroup.add(dryRunRadio);
+        actionGroup.add(deleteRadio);
+
+        actionPanel.add(dryRunRadio);
+        actionPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+        actionPanel.add(deleteRadio);
+
+        // 3. Execution Action Button
+        startButton = new JButton("Select Folder & Scan");
+        startButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        startButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+        startButton.addActionListener(e -> selectAndRunScan());
+
+        // Assembly
+        sidePanel.add(featurePanel);
+        sidePanel.add(Box.createRigidArea(new Dimension(0, 15)));
+        sidePanel.add(actionPanel);
+        sidePanel.add(Box.createVerticalGlue()); // Push button to bottom of side section
+        sidePanel.add(startButton);
+
+        return sidePanel;
+    }
+
     private void selectAndRunScan() {
-        // Module Selection Mode
-        Object[] scanModes = {"Find Duplicate Images", "Find White Text on Black BG"};
-        int modeSelection = JOptionPane.showOptionDialog(this,
-                "Which scanning function would you like to execute?",
-                "Select Feature Mode",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                scanModes,
-                scanModes[0]);
-
-        if (modeSelection == JOptionPane.CLOSED_OPTION) return;
-
-        ScanStrategy selectedStrategy = (modeSelection == JOptionPane.YES_OPTION) 
+        // Evaluate the persistent radio options directly
+        ScanStrategy selectedStrategy = duplicateModeRadio.isSelected() 
                 ? new DuplicateScanStrategy() 
-                : null; // We will plug our new strategy class here next!
+                : new TextImageScanStrategy();
 
-        if (selectedStrategy == null && modeSelection == JOptionPane.NO_OPTION) {
-            logArea.setText("Text-detection strategy is not implemented yet!\n");
-            return;
-        }
+        boolean isDryRun = dryRunRadio.isSelected();
 
-        // Directory Selection
+        // Directory Selection Open dialog
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Select Directory to Scan");
         fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        
+        // Pass the last selected directory to keep the user's place
+        fileChooser.setCurrentDirectory(lastSelectedDir);
 
         if (fileChooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
             logArea.append("No directory selected.\n");
             return;
         }
-        File selectedDir = fileChooser.getSelectedFile();
+        
+        // Update the pointer so subsequent runs start right here
+        lastSelectedDir = fileChooser.getSelectedFile();
 
-        // Operation Mode Option Selection
-        Object[] options = {"Stage Matches (Dry Run)", "Permanently Delete"};
-        int optionChoice = JOptionPane.showOptionDialog(this,
-                "How would you like to handle identified images?",
-                "Select Operation Mode",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                options,
-                options[0]);
-
-        if (optionChoice == JOptionPane.CLOSED_OPTION) {
-            logArea.append("Operation canceled.\n");
-            return;
-        }
-        boolean isDryRun = (optionChoice == JOptionPane.YES_OPTION);
-
-        // UI State Reset
-        startButton.setEnabled(false);
+        // UI Component State Manipulation during scanning
+        setControlsEnabled(false);
         logArea.setText("");
         progressBar.setIndeterminate(true);
         progressBar.setString("Processing runtime tasks...");
 
-        // Kick off background thread execution
-        ScanWorker worker = new ScanWorker(selectedDir, isDryRun, selectedStrategy);
+        // Kick off execution using the SwingWorker background thread pool
+        ScanWorker worker = new ScanWorker(lastSelectedDir, isDryRun, selectedStrategy);
         worker.execute();
+    }
+
+    private void setControlsEnabled(boolean enabled) {
+        startButton.setEnabled(enabled);
+        duplicateModeRadio.setEnabled(enabled);
+        textModeRadio.setEnabled(enabled);
+        dryRunRadio.setEnabled(enabled);
+        deleteRadio.setEnabled(enabled);
     }
 
     private class ScanWorker extends SwingWorker<Void, String> {
@@ -119,7 +166,6 @@ public class DuplicateImageDeleter extends JFrame {
             publish("Target folder: " + directory.getAbsolutePath());
 
             try {
-                // Execute the selected strategy, passing publish as a method reference
                 strategy.execute(directory, isDryRun, this::publish);
             } catch (Exception e) {
                 publish("[FATAL ERROR] Strategy execution failed: " + e.getMessage());
@@ -151,7 +197,7 @@ public class DuplicateImageDeleter extends JFrame {
             progressBar.setIndeterminate(false);
             progressBar.setValue(100);
             progressBar.setString("Finished");
-            startButton.setEnabled(true);
+            setControlsEnabled(true); // Bring back all controls to life safely
         }
     }
 
