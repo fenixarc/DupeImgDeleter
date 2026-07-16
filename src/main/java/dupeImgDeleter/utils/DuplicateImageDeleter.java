@@ -15,6 +15,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class DuplicateImageDeleter extends JFrame {
@@ -114,7 +117,7 @@ public class DuplicateImageDeleter extends JFrame {
 
         @Override
         protected Void doInBackground() throws Exception {
-        	// Start the execution timer
+            // Start the execution timer
             long startTime = System.currentTimeMillis();
             
             publish("Target folder: " + directory.getAbsolutePath());
@@ -131,19 +134,19 @@ public class DuplicateImageDeleter extends JFrame {
                 publish("Warning: Permanent deletion mode active.");
             }
 
-            publish("\nIndexing files... (Please wait)");
-            Map<String, List<Path>> hashMap = new HashMap<>();
-
-            // Gather files and calculate hashes
+            publish("\nIndexing files and checking sizes... (Please wait)");
+            
+            // Group files by file size
+            Map<Long, List<Path>> filesBySize = new HashMap<>();
             try (Stream<Path> paths = Files.walk(directory.toPath())) {
                 paths.filter(Files::isRegularFile)
                      .filter(DuplicateImageDeleter::isImageFile)
                      .forEach(path -> {
                          try {
-                             String hash = generateMD5(path);
-                             hashMap.computeIfAbsent(hash, k -> new ArrayList<>()).add(path);
+                             long size = Files.size(path);
+                             filesBySize.computeIfAbsent(size, k -> new ArrayList<>()).add(path);
                          } catch (IOException e) {
-                             publish("[ERROR] Could not read file: " + path.getFileName() + " (" + e.getMessage() + ")");
+                             publish("[ERROR] Could not read file size: " + path.getFileName() + " (" + e.getMessage() + ")");
                          }
                      });
             } catch (IOException e) {
@@ -151,11 +154,31 @@ public class DuplicateImageDeleter extends JFrame {
                 return null;
             }
 
+            // Filter out unique sizes (Fast-Fail Rule)
+            List<Path> candidateFiles = filesBySize.values().stream()
+                    .filter(list -> list.size() > 1)
+                    .flatMap(Collection::stream)
+                    .collect(Collectors.toList());
+
+            publish("Found " + candidateFiles.size() + " files sharing identical sizes. Processing hashes...");
+
+            // Parallel processing of hashes on candidates
+            Map<String, List<Path>> hashMap = new ConcurrentHashMap<>();
+            candidateFiles.parallelStream().forEach(path -> {
+                try {
+                    String hash = generateMD5(path);
+                    // Use thread-safe computeIfAbsent with Collections.synchronizedList
+                    hashMap.computeIfAbsent(hash, k -> Collections.synchronizedList(new ArrayList<>())).add(path);
+                } catch (IOException e) {
+                    publish("[ERROR] Could not hash file: " + path.getFileName() + " (" + e.getMessage() + ")");
+                }
+            });
+
             // Clean up duplicates
             publish("\nAnalyzing duplicates...");
             long processedCount = 0;
             long bytesSaved = 0;
-            int uniqueCounter = 1;
+            AtomicInteger uniqueCounter = new AtomicInteger(1);
 
             for (Map.Entry<String, List<Path>> entry : hashMap.entrySet()) {
                 List<Path> fileGroup = entry.getValue();
@@ -173,7 +196,7 @@ public class DuplicateImageDeleter extends JFrame {
                             if (isDryRun) {
                                 String rawName = FilenameUtils.getBaseName(duplicate.getFileName().toString());
                                 String ext = FilenameUtils.getExtension(duplicate.getFileName().toString());
-                                Path targetPath = STAGING_DIR.resolve(rawName + "_" + uniqueCounter++ + "." + ext);
+                                Path targetPath = STAGING_DIR.resolve(rawName + "_" + uniqueCounter.getAndIncrement() + "." + ext);
 
                                 Files.move(duplicate, targetPath, StandardCopyOption.REPLACE_EXISTING);
                                 publish("  [STAGED]  " + duplicate.getFileName() + " -> " + targetPath.toAbsolutePath());
